@@ -5,9 +5,22 @@ from operator import itemgetter
 import os
 import re
 
+from flask import Flask, redirect, render_template
+from flask_wtf import Form
+from wtforms import IntegerField, RadioField, SelectField, TextField
+from wtforms.validators import Required, ValidationError
 
-default_data_directory = os.path.join(os.path.dirname(__file__), "name_frequency_data")
+
+# Create the Web interface
+app = Flask(__name__)
+app.config["DEBUG"] = True
+app.config["SECRET_KEY"] = "not a website, so not a problem"
+
+# Set local storage paths
+default_data_directory = \
+        os.path.join(os.path.dirname(__file__), "name_frequency_data")
 DEFAULT_DATA_FILE = "yob2013.txt"
+
 
 def import_name_data(
         source_data_directory=default_data_directory,
@@ -72,9 +85,55 @@ def filter_names(
     return fully_filtered_names
 
 
+def _save_names(names, pickle_file_name="chosen_names.txt"):
+    pickle.dump(names, open(pickle_file_name, 'wb'))
+
+
+def _retrieve_names(pickle_file_name="chosen_names.txt"):
+    names = pickle.load(open(pickle_file_name, 'rb'))
+    return names
+
+
+class YearForm(Form):
+    year = SelectField("Available Years", coerce=int)
+
+
+class FilterForm(Form):
+    gender = SelectField("Gender", coerce=int)
+    min_length = IntegerField("Minimum Length")
+    max_length = IntegerField("Maximum Length")
+    min_frequency = IntegerField("Minimum Frequency")
+    max_frequency = IntegerField("Maximum Frequency")
+    most_common_rank = IntegerField("Most Common Rank")
+    least_common_rank = IntegerField("Least Common Rank")
+    does_not_contain = TextField("Letter Patterns Not Allowed")
+
+
+@app.route("/import")
+def import_view():
+    form = YearForm()
+
+    all_files = []
+    years_available = []
+    for _, _, files in os.walk(default_data_directory):
+        all_files.extend(files)
+    for each in all_files:
+        year_search = re.match("^yob(\d{4}).txt", each)
+        if year_search:
+            years_available.extend(year_search.groups()[0])
+    form.year.choices = years_available
+
+    if form.validate_on_submit():
+        data_file = "yob{}.txt".format(form.year.data)
+        all_names = import_name_data(source_data_file=data_file)
+        _save_names(all_names, pickle_file_name="all_names.txt")
+        return redirect("/filter")
+
+    return render_template("import.html", form=form)
+
+
 if __name__ == '__main__':
     all_names = import_name_data()
-    print(len(all_names))
     names = filter_names(
             all_names,
             min_length=3, max_length=8,
@@ -82,4 +141,5 @@ if __name__ == '__main__':
             most_common_rank=100,
             does_not_contain=[]
             )
-    print(len(names))
+    _save_names(names)
+    app.run()
