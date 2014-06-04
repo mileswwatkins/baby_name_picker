@@ -1,4 +1,3 @@
-from collections import namedtuple
 import cPickle as pickle
 from csv import reader
 from operator import itemgetter
@@ -31,12 +30,13 @@ def import_name_data(
     input_data_file = os.path.join(source_data_directory, source_data_file)
 
     names = []
-    Name = namedtuple("Name", "name gender frequency")
-
     with open(input_data_file, 'rb') as import_this:
         file_reader = reader(import_this)
         for observation in file_reader:
-            name = Name(observation[0], observation[1], int(observation[2]))
+            name = {}
+            name["name"] = observation[0]
+            name["gender"] = observation[1]
+            name["frequency"] = int(observation[2])
             names.append(name)
 
     return names
@@ -48,7 +48,7 @@ def filter_names(
         min_length=1, max_length=100,
         min_frequency=1, max_frequency=10000000,
         most_common_rank=1, least_common_rank=10000000,
-        does_not_contain=[]
+        does_not_contain=""
         ):
     """
     Apply filters to a list of names, leaving only those with the
@@ -58,14 +58,14 @@ def filter_names(
     if gender:
         gender_filtered_names = []
         for name in names:
-            if name.gender == gender:
+            if name["gender"] == gender:
                 gender_filtered_names.append(name)
     else:
         gender_filtered_names = names
 
     sorted_names = sorted(
             gender_filtered_names,
-            key=itemgetter(2),
+            key=itemgetter("frequency"),
             reverse=True
             )
     rank_filtered_names = sorted_names[most_common_rank-1:least_common_rank-1]
@@ -73,14 +73,15 @@ def filter_names(
     fully_filtered_names = []
     for name in rank_filtered_names:
         passes_all_patterns = True
-        for pattern in does_not_contain:
+        for pattern in does_not_contain.split(" "):
             if passes_all_patterns:
-                passes_all_patterns = not re.search(pattern, name.name.lower())
+                passes_all_patterns = \
+                        not re.search(pattern, name["name"].lower())
 
-        if min_length <= len(name.name) <= max_length and \
-                min_frequency <= name.frequency <= max_frequency and \
+        if min_length <= len(name["name"]) <= max_length and \
+                min_frequency <= name["frequency"] <= max_frequency and \
                 passes_all_patterns:
-            fully_filtered_names.append(name.name)
+            fully_filtered_names.append(name["name"])
 
     return fully_filtered_names
 
@@ -99,17 +100,18 @@ class YearForm(Form):
 
 
 class FilterForm(Form):
-    gender = SelectField("Gender", coerce=int)
-    min_length = IntegerField("Minimum Length")
-    max_length = IntegerField("Maximum Length")
-    min_frequency = IntegerField("Minimum Frequency")
-    max_frequency = IntegerField("Maximum Frequency")
-    most_common_rank = IntegerField("Most Common Rank")
-    least_common_rank = IntegerField("Least Common Rank")
-    does_not_contain = TextField("Letter Patterns Not Allowed")
+    gender = RadioField("Gender", coerce=int, default=2)
+    min_length = IntegerField("Minimum Length", default=1)
+    max_length = IntegerField("Maximum Length", default=50)
+    min_frequency = IntegerField("Minimum Frequency", default=1)
+    max_frequency = IntegerField("Maximum Frequency", default=10000000)
+    most_common_rank = IntegerField("Most Common Rank", default=1)
+    least_common_rank = IntegerField("Least Common Rank", default=1000000)
+    does_not_contain = \
+            TextField("Letter Patterns Not Allowed (Delimited by Space)")
 
 
-@app.route("/import")
+@app.route("/import", methods=["GET", "POST"])
 def import_view():
     form = YearForm()
 
@@ -120,7 +122,9 @@ def import_view():
     for each in all_files:
         year_search = re.match("^yob(\d{4}).txt", each)
         if year_search:
-            years_available.extend(year_search.groups()[0])
+            years_available.append(
+                    (int(year_search.groups()[0]), year_search.groups()[0])
+                    )
     form.year.choices = years_available
 
     if form.validate_on_submit():
@@ -132,14 +136,37 @@ def import_view():
     return render_template("import.html", form=form)
 
 
+@app.route("/filter", methods=["GET", "POST"])
+def filter_view():
+    form = FilterForm()
+
+    GENDER_CHOICES = [(0, "Male"), (1, "Female"), (2, "Male or Female")]
+    form.gender.choices = GENDER_CHOICES
+
+    if form.validate_on_submit():
+        gender_selection = GENDER_CHOICES[form.gender.data][1]
+        all_names = _retrieve_names(pickle_file_name="all_names.txt")
+        filtered_names = filter_names(
+                all_names,
+                gender=gender_selection,
+                min_length=form.min_length.data,
+                max_length=form.max_length.data,
+                min_frequency=form.min_frequency.data,
+                max_frequency=form.max_frequency.data,
+                most_common_rank=form.most_common_rank.data,
+                least_common_rank=form.least_common_rank.data,
+                does_not_contain=form.does_not_contain.data
+                )
+        _save_names(filtered_names, pickle_file_name="filtered_names.txt")
+        return redirect("/choose")
+
+    return render_template("filter.html", form=form)
+
+
+@app.route("/choose")
+def choose_view():
+    return render_template("choose.html")
+
+
 if __name__ == '__main__':
-    all_names = import_name_data()
-    names = filter_names(
-            all_names,
-            min_length=3, max_length=8,
-            min_frequency=100,
-            most_common_rank=100,
-            does_not_contain=[]
-            )
-    _save_names(names)
     app.run()

@@ -1,4 +1,9 @@
 {% extends "layout.html" %}
 
 {% block content %}
+    <form method="POST">
+        {{ form.hidden_tag() }}
+        {{ form.year.label }} {{ form.year }}
+        <input class=submit type="submit" value="Use This Year's Name Data">
+    </form>
 {% endblock %}
