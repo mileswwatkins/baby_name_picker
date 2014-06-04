@@ -2,12 +2,13 @@ import cPickle as pickle
 from csv import reader
 from operator import itemgetter
 import os
+import random
 import re
 
 from flask import Flask, redirect, render_template
 from flask_wtf import Form
-from wtforms import IntegerField, RadioField, SelectField, TextField
-from wtforms.validators import Required, ValidationError
+from wtforms import BooleanField, IntegerField, RadioField, SelectField, \
+        TextField
 
 
 # Create the Web interface
@@ -58,7 +59,7 @@ def filter_names(
     if gender:
         gender_filtered_names = []
         for name in names:
-            if name["gender"] == gender:
+            if name["gender"] in gender:
                 gender_filtered_names.append(name)
     else:
         gender_filtered_names = names
@@ -72,11 +73,12 @@ def filter_names(
 
     fully_filtered_names = []
     for name in rank_filtered_names:
-        passes_all_patterns = True
-        for pattern in does_not_contain.split(" "):
-            if passes_all_patterns:
-                passes_all_patterns = \
-                        not re.search(pattern, name["name"].lower())
+        if does_not_contain:
+            passes_all_patterns = True
+            for pattern in does_not_contain.split(" "):
+                if passes_all_patterns:
+                    passes_all_patterns = \
+                            not re.search(pattern, name["name"].lower())
 
         if min_length <= len(name["name"]) <= max_length and \
                 min_frequency <= name["frequency"] <= max_frequency and \
@@ -86,11 +88,11 @@ def filter_names(
     return fully_filtered_names
 
 
-def _save_names(names, pickle_file_name="chosen_names.txt"):
+def _save_names(names, pickle_file_name):
     pickle.dump(names, open(pickle_file_name, 'wb'))
 
 
-def _retrieve_names(pickle_file_name="chosen_names.txt"):
+def _retrieve_names(pickle_file_name):
     names = pickle.load(open(pickle_file_name, 'rb'))
     return names
 
@@ -157,15 +159,20 @@ def filter_view():
                 least_common_rank=form.least_common_rank.data,
                 does_not_contain=form.does_not_contain.data
                 )
+        filtered_names = [all_names[0]["name"], all_names[1]["name"], all_names[2]["name"]]
         _save_names(filtered_names, pickle_file_name="filtered_names.txt")
+        _save_names(filtered_names, pickle_file_name="chosen_names.txt")
         return redirect("/choose")
 
     return render_template("filter.html", form=form)
 
 
-@app.route("/choose")
+@app.route("/choose", methods=["GET", "POST"])
 def choose_view():
-    return render_template("choose.html")
+    names = _retrieve_names(pickle_file_name="chosen_names.txt")
+    NUMBER_OF_CHOICES = 3
+    name_choices = random.sample(names, NUMBER_OF_CHOICES)
+    return render_template("choose.html", choices=name_choices)
 
 
 if __name__ == '__main__':
