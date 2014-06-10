@@ -46,6 +46,7 @@ def import_name_data(
 def filter_names(
         names,
         gender="",
+        gendered_names_only=False,
         min_length=1, max_length=100,
         min_frequency=1, max_frequency=10000000,
         most_common_rank=1, least_common_rank=10000000,
@@ -70,6 +71,15 @@ def filter_names(
             reverse=True
             )
     rank_filtered_names = sorted_names[most_common_rank-1:least_common_rank-1]
+
+    male_names = [name["name"] for name in names if name["gender"] == "M"]
+    female_names = [name["name"] for name in names if name["gender"] == "F"]
+    gender_ambiguous_names = [name["name"] for name in names if 
+            name["name"] in male_names and name["name"] in famale_names]
+    if gendered_names_only:
+        for name in rank_filtered_names:
+            if name["name"] in gender_ambiguous_names:
+                rank_filtered_names.remove(name)
 
     fully_filtered_names = []
     for name in rank_filtered_names:
@@ -105,6 +115,10 @@ class YearForm(Form):
 
 class FilterForm(Form):
     gender = RadioField("Gender", coerce=int, default=2)
+    gendered_names_only = BooleanField(
+            "Only Allow Names with Unambigous Gender",
+            default=False
+            )
     min_length = IntegerField("Minimum Length", default=1)
     max_length = IntegerField("Maximum Length", default=50)
     min_frequency = IntegerField("Minimum Frequency", default=1)
@@ -153,6 +167,7 @@ def filter_view():
         filtered_names = filter_names(
                 all_names,
                 gender=gender_selection,
+                gendered_names_only=gendered_names_only,
                 min_length=form.min_length.data,
                 max_length=form.max_length.data,
                 min_frequency=form.min_frequency.data,
