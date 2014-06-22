@@ -4,7 +4,6 @@ from operator import itemgetter
 import os
 import random
 import re
-import webbrowser
 
 from flask import Flask, redirect, request, render_template, session
 from flask_wtf import Form
@@ -21,6 +20,11 @@ app.config["SECRET_KEY"] = "not a website, so not a problem"
 local_directory = os.path.dirname(__file__)
 default_data_directory = os.path.join(local_directory, "name_frequency_data")
 DEFAULT_DATA_FILE = "yob2013.txt"
+name_variants_file = os.path.join(
+        local_directory,
+        "name_variants_data",
+        "givenname_similar_names.csv"
+        )
 
 
 def import_name_data(
@@ -48,6 +52,7 @@ def filter_names(
         names,
         gender="",
         gendered_names_only=False,
+        variant_handling=None,
         min_length=1, max_length=100,
         min_frequency=1, max_frequency=10000000,
         most_common_rank=1, least_common_rank=10000000,
@@ -56,7 +61,7 @@ def filter_names(
     '''
     Apply filters to a list of names, leaving only those with the
     desired characteristics
-    '''
+    '''    
 
     if gender:
         gender_filtered_names = []
@@ -73,17 +78,32 @@ def filter_names(
             )
     rank_filtered_names = sorted_names[most_common_rank-1:least_common_rank-1]
 
+    name_variants = {}
+    with open(name_variants_file, 'rb') as import_this:
+        file_reader = reader(import_this)
+        for observation in file_reader:
+            name = observation[0]
+            variants = observation[2].split(" ")
+            name_variants[name] = variants
+    variant_filtered_names = rank_filtered_names
+    if variant_handling in ("Keep most common variant", "Keep no variants"):
+        for name in rank_filtered_names:
+            for name_variant in name_variants.get(name, []):
+                variant_filtered_names.remove(name_variant)
+                if variant_handling == "Keep no variants":
+                    variant_filtered_names.remove(name)
+
     male_names = [name["name"] for name in names if name["gender"] == "M"]
     female_names = [name["name"] for name in names if name["gender"] == "F"]
     gender_ambiguous_names = [name["name"] for name in names if 
             name["name"] in male_names and name["name"] in female_names]
     if gendered_names_only:
-        for name in rank_filtered_names:
+        for name in variant_filtered_names:
             if name["name"] in gender_ambiguous_names:
-                rank_filtered_names.remove(name)
+                variant_filtered_names.remove(name)
 
     fully_filtered_names = []
-    for name in rank_filtered_names:
+    for name in variant_filtered_names:
         passes_all_patterns = True
         if does_not_contain:
             for pattern in does_not_contain.split(" "):
@@ -122,6 +142,7 @@ class FilterForm(Form):
             "Only Allow Names with Unambigous Gender",
             default=False
             )
+    variant_handling = SelectField("How to Handle Name Variants", coerce=int)
     min_length = IntegerField("Minimum Length", default=1)
     max_length = IntegerField("Maximum Length", default=50)
     min_frequency = IntegerField("Minimum Frequency", default=1)
@@ -187,13 +208,22 @@ def filter_view():
     GENDER_CHOICES = [(0, "Male"), (1, "Female"), (2, "Male or Female")]
     form.gender.choices = GENDER_CHOICES
 
+    VARIANT_CHOICES = [
+            (0, "Keep all variants"),
+            (1, "Keep most common variant"),
+            (2, "Keep no variants")
+            ]
+    form.variant_handling.choices = VARIANT_CHOICES
+
     if form.validate_on_submit():
-        gender_selection = GENDER_CHOICES[form.gender.data][1]
         all_names = _retrieve_names(pickle_file_name="all_names.txt")
+        gender_selection = GENDER_CHOICES[form.gender.data][1]
+        variant_selection = VARIANT_CHOICES[form.variant_handling.data][1]
         filtered_names = filter_names(
                 all_names,
                 gender=gender_selection,
                 gendered_names_only=form.gendered_names_only.data,
+                variant_handling=variant_selection,
                 min_length=form.min_length.data,
                 max_length=form.max_length.data,
                 min_frequency=form.min_frequency.data,
@@ -242,11 +272,4 @@ def names_remaining_view():
 
 
 if __name__ == '__main__':
-    # app.run()
-    with open(variant_data_file, 'rb') as import_this:
-        file_reader = reader(import_this)
-        for observation in file_reader:
-            name_variants = {}
-            name_variants["name"] = observation[0]
-            name_variants["variants"] = observation[2].split(" ")
-            all_name_variants.append(name_variants)
+    app.run()
