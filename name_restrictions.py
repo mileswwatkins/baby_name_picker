@@ -242,4 +242,11 @@ def names_remaining_view():
 
 
 if __name__ == '__main__':
-    app.run()
+    # app.run()
+    with open(variant_data_file, 'rb') as import_this:
+        file_reader = reader(import_this)
+        for observation in file_reader:
+            name_variants = {}
+            name_variants["name"] = observation[0]
+            name_variants["variants"] = observation[2].split(" ")
+            all_name_variants.append(name_variants)
