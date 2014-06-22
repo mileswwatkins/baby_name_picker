@@ -4,6 +4,7 @@ from operator import itemgetter
 import os
 import random
 import re
+import webbrowser
 
 from flask import Flask, redirect, request, render_template, session
 from flask_wtf import Form
@@ -17,8 +18,8 @@ app.config["DEBUG"] = True
 app.config["SECRET_KEY"] = "not a website, so not a problem"
 
 # Set local storage paths
-default_data_directory = \
-        os.path.join(os.path.dirname(__file__), "name_frequency_data")
+local_directory = os.path.dirname(__file__)
+default_data_directory = os.path.join(local_directory, "name_frequency_data")
 DEFAULT_DATA_FILE = "yob2013.txt"
 
 
@@ -26,7 +27,7 @@ def import_name_data(
         source_data_directory=default_data_directory,
         source_data_file=DEFAULT_DATA_FILE
         ):
-    """ Import the designated Social Security name frequency dataset """
+    '''Import the designated Social Security name frequency dataset'''
 
     input_data_file = os.path.join(source_data_directory, source_data_file)
 
@@ -52,10 +53,10 @@ def filter_names(
         most_common_rank=1, least_common_rank=10000000,
         does_not_contain=""
         ):
-    """
+    '''
     Apply filters to a list of names, leaving only those with the
     desired characteristics
-    """
+    '''
 
     if gender:
         gender_filtered_names = []
@@ -101,10 +102,12 @@ def filter_names(
 
 
 def _save_names(names, pickle_file_name):
+    '''Utility function to save a list of names to disk'''
     pickle.dump(names, open(pickle_file_name, 'wb'))
 
 
 def _retrieve_names(pickle_file_name):
+    '''Utility function to retrieve a list of names from disk'''
     names = pickle.load(open(pickle_file_name, 'rb'))
     return names
 
@@ -129,8 +132,29 @@ class FilterForm(Form):
             TextField("Letter Patterns Not Allowed (Delimited by Space)")
 
 
+@app.route("/", methods=["GET"])
+def default_view():
+    '''Reroutes user to the appropriate step in the process'''
+
+    all_files = []
+    for _, _, files in os.walk(local_directory):
+        all_files.extend(files)
+    print(local_directory)
+    print(all_files)
+    if "chosen_names.txt" in all_files:
+        return redirect("/choose")
+    elif "filtered_names.txt" in all_files:
+        return redirect("/choose")
+    elif "all_names.txt" in all_files:
+        return redirect("/filter")
+    else:
+        return redirect("/import")
+
+
 @app.route("/import", methods=["GET", "POST"])
 def import_view():
+    '''Select and import one year of the Social Security name data'''
+
     form = YearForm()
 
     all_files = []
@@ -156,6 +180,8 @@ def import_view():
 
 @app.route("/filter", methods=["GET", "POST"])
 def filter_view():
+    '''For the selected year of data, filter out unwanted types of names'''
+
     form = FilterForm()
 
     GENDER_CHOICES = [(0, "Male"), (1, "Female"), (2, "Male or Female")]
@@ -185,6 +211,11 @@ def filter_view():
 
 @app.route("/choose", methods=["GET", "POST"])
 def choose_view():
+    '''
+    Provide the user a choice between a set of names from the filtered
+    list, and remove those that are not chosen
+    '''
+
     name_to_keep = request.form.get("button")
     name_choices = session.get("name_choices", None)
     if name_to_keep and name_choices and name_to_keep in name_choices:
@@ -205,6 +236,7 @@ def choose_view():
 
 @app.route("/names_remaining", methods=["GET"])
 def names_remaining_view():
+    '''Provide a quick view of which names remain'''
     names = _retrieve_names(pickle_file_name="chosen_names.txt")
     return render_template("names_remaining.html", names=names)
 
