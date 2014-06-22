@@ -5,7 +5,7 @@ import os
 import random
 import re
 
-from flask import Flask, redirect, request, render_template
+from flask import Flask, redirect, request, render_template, session
 from flask_wtf import Form
 from wtforms import BooleanField, IntegerField, RadioField, SelectField, \
         TextField
@@ -75,7 +75,7 @@ def filter_names(
     male_names = [name["name"] for name in names if name["gender"] == "M"]
     female_names = [name["name"] for name in names if name["gender"] == "F"]
     gender_ambiguous_names = [name["name"] for name in names if 
-            name["name"] in male_names and name["name"] in famale_names]
+            name["name"] in male_names and name["name"] in female_names]
     if gendered_names_only:
         for name in rank_filtered_names:
             if name["name"] in gender_ambiguous_names:
@@ -124,7 +124,7 @@ class FilterForm(Form):
     min_frequency = IntegerField("Minimum Frequency", default=1)
     max_frequency = IntegerField("Maximum Frequency", default=10000000)
     most_common_rank = IntegerField("Most Common Rank", default=1)
-    least_common_rank = IntegerField("Least Common Rank", default=1000000)
+    least_common_rank = IntegerField("Least Common Rank", default=2500)
     does_not_contain = \
             TextField("Letter Patterns Not Allowed (Delimited by Space)")
 
@@ -167,7 +167,7 @@ def filter_view():
         filtered_names = filter_names(
                 all_names,
                 gender=gender_selection,
-                gendered_names_only=gendered_names_only,
+                gendered_names_only=form.gendered_names_only.data,
                 min_length=form.min_length.data,
                 max_length=form.max_length.data,
                 min_frequency=form.min_frequency.data,
@@ -185,22 +185,28 @@ def filter_view():
 
 @app.route("/choose", methods=["GET", "POST"])
 def choose_view():
+    name_to_keep = request.form.get("button")
+    name_choices = session.get("name_choices", None)
+    if name_to_keep and name_choices and name_to_keep in name_choices:
+        names = _retrieve_names(pickle_file_name="chosen_names.txt")
+        for name in name_choices:
+            if name != name_to_keep:
+                names.remove(name)
+        _save_names(names, pickle_file_name="chosen_names.txt")
+
     names = _retrieve_names(pickle_file_name="chosen_names.txt")
     NUMBER_OF_CHOICES = 3
-    name_choices = random.sample(names, NUMBER_OF_CHOICES)
-    
-    return render_template("choose.html", choices=name_choices)
+    try:
+        session["name_choices"] = random.sample(names, NUMBER_OF_CHOICES)
+        return render_template("choose.html", choices=session["name_choices"])
+    except ValueError:
+        return redirect("/names_remaining")
 
 
-@app.route("/remove/<remove_these_names>", methods=["POST"])
-def remove_view():
-    names_to_remove = remove_these_names.split("&")
+@app.route("/names_remaining", methods=["GET"])
+def names_remaining_view():
     names = _retrieve_names(pickle_file_name="chosen_names.txt")
-    name_choices.remove(selected_name)
-    for name_to_remove in names_to_remove:
-        names.remove(name_to_remove)
-    _save_names(names, pickle_file_name="chosen_names.txt")
-    return redirect("/choose")
+    return render_template("names_remaining.html", names=names)
 
 
 if __name__ == '__main__':
